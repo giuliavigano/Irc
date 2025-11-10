@@ -20,4 +20,12 @@ private:
 
 };
 
+/*irssi traduce automaticamente i comandi dell'utente in comandi IRC e li invia al tuo server:
+
+Il tuo server riceve questi comandi come stringhe attraverso recv() e deve:
+
+Parsarli (estrarre il comando e i parametri)
+Eseguire l'azione corrispondente
+Inviare la risposta al client con send()*/
+
 #endif
