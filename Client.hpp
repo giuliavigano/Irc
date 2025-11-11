@@ -20,6 +20,7 @@ public:
 	bool		isRegistered() const;
 	bool		isAutenticated() const;
 	
+	void		appendToBuffer(const std::string& str);
 private:
 	int						fD;
 	std::string				nickName;

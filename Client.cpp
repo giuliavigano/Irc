@@ -33,3 +33,7 @@ bool		Client::isRegistered() const {
 bool		Client::isAutenticated() const {
 	return is_autenticated;
 }
+
+void		Client::appendToBuffer(const std::string& str) {
+	buffer += str;
+}

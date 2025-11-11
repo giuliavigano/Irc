@@ -93,8 +93,25 @@ void	Server::handleNewConnection() {
 
 // GESTIRE ATTIVITÀ RICEVUTA DA CLIENT SOCKET --> DATI RICEVUTI (con recv(), estrai comandi e parsing ??)
 void	Server::handleClient(int client_fd) {
+	Client	*client = clients[client_fd];
 	char	buffer[512]; // il protocollo irc specifica che i messaggi hanno max 512 byte (incluso \r\n)
 	ssize_t	bytes = recv(client_fd, buffer, sizeof(buffer), 0);
+	if (bytes < 0) {
+		if (errno == EWOULDBLOCK || errno == EAGAIN || errno == EINTR)
+			return;
+		std::cerr << "recv() failed on fd: " << client_fd << strerror(errno) << std::endl;
+		close(client_fd);
+		delete client;
+		clients.erase(client_fd);
+	} else if (bytes == 0) {
+		std::cout << "Client " << client_fd << " disconnected" << std::endl;
+		close(client_fd);
+		delete client;
+		clients.erase(client_fd);
+	} else {
+		buffer[bytes] = '\0';
+		client->appendToBuffer(std::string(buffer, bytes));
+	}
 }
 
 // CICLO PRINCIPALE --> SEMPRE IN ASCOLTO PER CONNESSIONI/COMUNICAZIONI SERVER/CLIENT
@@ -118,19 +135,24 @@ void	Server::run() {
 			if (FD_ISSET(socketFd, &read_set)) {
 				handleNewConnection();
 			}
-			for (std::map<int, Client*>::iterator it = clients.begin(); it != clients.end(); ++it) {
+			for (std::map<int, Client*>::iterator it = clients.begin(); it != clients.end(); ) {
 				if (FD_ISSET(it->first, &read_set)) {
-					handleClient(it->first);
-				}
+					int	client_fd = it->first;
+					++it;
+					handleClient(client_fd);
+				} else
+					++it;
 			}
 		}
 	}
 }
 
+// RIPARTI DA HANDLE CLIENT E GESTIONE ERRORI SOPRATTUTTO ERRNO !!
+
 //SE VUOI STAMPARE I LOG -->
 //	struct sockaddr_in	client_addr;
 //	socklen_t			addr_len = sizeof(client_addr);
-//	int	client_fd = accept(socketFd, (struct sockaddr*)&client_addr, &addr_len);
+//	int		client_fd = accept(socketFd, (struct sockaddr*)&client_addr, &addr_len);
 //	char	*ip = inet_ntoa(client_addr.sin_addr);
 //	int		port = ntohs(client_addr.sin_port);
 //	std::cout<< "[" << client_fd << "] New connection from " << ip << ":" << port << std::endl
