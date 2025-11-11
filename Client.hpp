@@ -17,8 +17,8 @@ public:
 	void		setNickName(const std::string& nickname);
 	void		setUserName(const std::string& userName);
 
-	bool	isRegistered() const;
-	bool	isAutenticated() const;
+	bool		isRegistered() const;
+	bool		isAutenticated() const;
 	
 private:
 	int						fD;

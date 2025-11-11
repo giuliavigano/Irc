@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <iostream>
+#include <sys/select.h>
 #include <netinet/in.h>
 
 #include "Client.hpp"
@@ -21,6 +22,11 @@ public:
 
 	bool	init();
 	void	run();
+	int		get_maxFd() const;
+
+	void	handleClient(int client_fd);
+	void	handleNewConnection();
+
 private:
 	int						port;
 	std::string				passWord;

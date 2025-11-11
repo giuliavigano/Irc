@@ -63,8 +63,92 @@ bool	Server::init() {
 	return true;
 }
 
-void	Server::run() {
-	while (1) {
-		
+// FD PIU ALTO FRA QUELLI SU CUI LAVORO (per select() -> monitora piu fd contemporaneamente per sapere quali sono pronti per fare operazioni di I/O input/output)
+int		Server::get_maxFd() const {
+	int		max = socketFd;
+	for (std::map<int, Client*>::const_iterator it = clients.begin(); it != clients.end(); ++it) {
+		if (it->first > max)
+			max = it->first;
+	}
+	return max;
+}
+
+// controlla: accept() sarebbe bloccante (attende) --> quindi se arriva un segnale puo essere interrotta !
+void	Server::handleNewConnection() {
+	int	client_fd = accept(socketFd, NULL, NULL);
+	if (client_fd < 0) {
+		std::cerr << "accept() failed: " << strerror(errno) << std::endl; // perche voglio vedere tutti i log di errore altrimenti posso ridurli con SE if (errno != EWOULDBLOCK && errno != EAGAIN && errno != EINTR) allora std::cer.... POI return;
+		return;
+	}
+	else if (client_fd >= FD_SETSIZE) {
+		close(client_fd);
+		return;
+	}
+	else {
+		fcntl(client_fd, F_SETFL, O_NONBLOCK);
+		Client*	client = new Client(client_fd);
+		clients[client_fd] = client;
 	}
 }
+
+// GESTIRE ATTIVITÀ RICEVUTA DA CLIENT SOCKET --> DATI RICEVUTI (con recv(), estrai comandi e parsing ??)
+void	Server::handleClient(int client_fd) {
+	char	buffer[512]; // il protocollo irc specifica che i messaggi hanno max 512 byte (incluso \r\n)
+	ssize_t	bytes = recv(client_fd, buffer, sizeof(buffer), 0);
+}
+
+// CICLO PRINCIPALE --> SEMPRE IN ASCOLTO PER CONNESSIONI/COMUNICAZIONI SERVER/CLIENT
+void	Server::run() {
+	while (1) {
+		int		max_fd = get_maxFd();
+		fd_set	read_set;
+		FD_ZERO(&read_set);
+		FD_SET(socketFd, &read_set);
+		for (std::map<int, Client*>::const_iterator it = clients.begin(); it != clients.end(); ++it)
+			FD_SET(it->first, &read_set);
+		int	result = select(max_fd + 1, &read_set, NULL, NULL, NULL);
+		if (result < 0) {
+			if (errno == EINTR) // Interruzione da SEGNALE (Ctrl+C)
+				continue;
+			std::cerr << "select() failed: " << strerror(errno) << std::endl;
+		}
+		else if (result == 0)
+			continue;
+		else {
+			if (FD_ISSET(socketFd, &read_set)) {
+				handleNewConnection();
+			}
+			for (std::map<int, Client*>::iterator it = clients.begin(); it != clients.end(); ++it) {
+				if (FD_ISSET(it->first, &read_set)) {
+					handleClient(it->first);
+				}
+			}
+		}
+	}
+}
+
+//SE VUOI STAMPARE I LOG -->
+//	struct sockaddr_in	client_addr;
+//	socklen_t			addr_len = sizeof(client_addr);
+//	int	client_fd = accept(socketFd, (struct sockaddr*)&client_addr, &addr_len);
+//	char	*ip = inet_ntoa(client_addr.sin_addr);
+//	int		port = ntohs(client_addr.sin_port);
+//	std::cout<< "[" << client_fd << "] New connection from " << ip << ":" << port << std::endl
+//	MI SERVONO QUESTE INFORMAZIONI SUL CLIENT ?
+
+// FD_CLR 	per rimuovere un fd dal set --> MA RICREANDO IL SET OGNI VOLTA NON DOVREBBE SERVIRE !
+// FD_ISSET	controlla se un fd è nel set (clients + socket server)
+
+
+// GESTIONE ERRORI ERRNO:
+// EWOULDBLOCK O EAGAIN --> nessuna connessione disponibile , socket non-bloccante --> NORMALE, RIPROVA DOPO!!
+// EINTR --> INTERROTTO DA UN SEGNALE (Ctrl+C) --> RIPROVA ??
+
+/*errno										Significato								Azione
+EWOULDBLOCK / EAGAIN	Nessuna connessione disponibile (socket non-bloccante)	Normale, riprova dopo
+EINTR					Interrotto da segnale									Riprova
+EBADF					Socket invalido											Bug nel codice
+EINVAL					Socket non in listen()									Bug nel codice
+EMFILE					Troppi file aperti (limite processo)					Limite risorse
+ENFILE					Troppi file aperti (limite sistema)						Limite risorse
+ENOBUFS					Buffer insufficienti									Problema sistema*/
