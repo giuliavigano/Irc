@@ -9,14 +9,24 @@ class Client {
 public:
 	Client(int fd);
 	~Client();
+
+	int			get_fD() const;
+	std::string	get_nickName() const;
+	std::string	get_userName() const;
+
+	void		setNickName(const std::string& nickname);
+	void		setUserName(const std::string& userName);
+
+	bool	isRegistered() const;
+	bool	isAutenticated() const;
+	
 private:
-	int			fD;
-	std::string	nickName;
-	std::string	userName;
-	std::string	realName;
+	int						fD;
+	std::string				nickName;
+	std::string				userName;
 	bool					is_autenticated;
 	std::list<std::string>	channels;
-	std::string				buffer_text;
+	std::string				buffer;
 
 };
 
