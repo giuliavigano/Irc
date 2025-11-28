@@ -6,17 +6,6 @@
 
 extern volatile sig_atomic_t	g_shutdown;
 
-static std::string getHostname(int socketFd) {
-    struct sockaddr_in addr;
-    socklen_t addr_len = sizeof(addr);
-    if (getsockname(socketFd, (struct sockaddr*)&addr, &addr_len) == 0) {
-        const char* ip = inet_ntoa(addr.sin_addr);
-        if (ip)
-            return std::string(ip);
-    }
-    return "unknown";
-}
-
 // VEDI SE LANCIARE INVECE UN'ECCEZIONE --> E GESTIRE L'ERRORE CON TRY CATCH (COSI L'OGETTO NON VIENE CREATO)
 Server::Server(int _port, const std::string& password) : port(_port), passWord(password), serverName("ircserv") {
 	if (!init()) {
@@ -83,12 +72,6 @@ bool	Server::init() {
 		socketFd = -1;
 		return false;
 	}
-
-	std::ostringstream oss;
-	oss << port;
-	std::string str = oss.str();
-
-	std::cout << "Server listening on " << getHostname(socketFd) + ":" + str << std::endl;
 	return true;
 }
 
@@ -120,6 +103,22 @@ void	Server::handleNewConnection() {
 	}
 }
 
+static void	disconnectClient(Client* client, Server* server, std::map<int , Client*>& clients)
+{
+	int	client_fd = client->get_fD();
+	std::map<std::string, Channel*>	channelsMap = client->getChannelList();
+	std::string quitMsg = ":" + client->get_nickName() + "!" + client->get_userName() + "@" + client->getHostname() + " QUIT :Client Quit\r\n";
+	for (std::map<std::string, Channel*>::iterator it = channelsMap.begin(); it != channelsMap.end(); it++)
+	{
+		it->second->broadcast(quitMsg, client);
+		it->second->removeClient(client, server);
+		server->ifRemoveChannel(it->first);
+	}
+	close(client_fd);
+	delete client;
+	clients.erase(client_fd);
+}
+
 // GESTIRE ATTIVITÀ RICEVUTA DA CLIENT SOCKET --> DATI RICEVUTI (con recv(), estrai comandi e parsing ??)
 void	Server::handleClient(int client_fd) {
 	Client	*client = clients[client_fd];
@@ -129,14 +128,10 @@ void	Server::handleClient(int client_fd) {
 		if (errno == EWOULDBLOCK || errno == EAGAIN || errno == EINTR)
 			return;
 		std::cerr << "recv() failed on fd: " << client_fd << strerror(errno) << std::endl;
-		close(client_fd);
-		delete client;
-		clients.erase(client_fd);
+		disconnectClient(client, this, clients);
 	} else if (bytes == 0) {
 		std::cout << "Client " << client_fd << " disconnected" << std::endl;
-		close(client_fd);
-		delete client;
-		clients.erase(client_fd);
+		disconnectClient(client, this, clients);
 	} else {
 		buffer[bytes] = '\0';
 		client->appendToBuffer(std::string(buffer, bytes));
@@ -213,19 +208,13 @@ void	Server::handleClientWrite(Client* client)
 		if (errno != EWOULDBLOCK && errno != EAGAIN)
 		{
 			std::cerr << "send() failed for client " << client->get_fD() << ": " << strerror(errno) << std::endl;
-			int client_fd = client->get_fD();
-			close(client_fd);
-			delete client;
-			clients.erase(client_fd);
+			disconnectClient(client, this, clients);
 		}
 	}
 	else if (bytes_sent == 0)
 	{
 		std::cout << "Client " << client->get_fD() << " disconnected." << std::endl;
-		int	client_fd = client->get_fD();
-		close(client_fd);
-		delete client;
-		clients.erase(client_fd);
+		disconnectClient(client, this, clients);
 	}
 }
 
@@ -256,6 +245,7 @@ void	Server::ifRemoveChannel(const std::string& channelName) {
 	std::map<std::string, Channel*>::iterator it = channels.find(channelName);
 
 	if (it->second->isEmpty()) {
+		std::cout << "Channel: " << it->first << " deleted" <<std::endl;
 		delete it->second;
 		channels.erase(it);
 	}

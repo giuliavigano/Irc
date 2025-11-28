@@ -15,7 +15,7 @@ static void	signalHandler(int signum)
 int		main(int argc, char *argv[]) {
 	if (argc != 3)
 	{
-		std::cout << "Bad input, must be in this form: ./.. <port> <password> !" << std::endl;
+		std::cout << "Bad input, must be in this form: ./.. <port> <password>" << std::endl;
 		return 1;
 	}
 	

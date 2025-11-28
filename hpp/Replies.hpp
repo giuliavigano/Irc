@@ -21,8 +21,10 @@
 # define ERR_NOTONCHANNEL		"442"
 # define ERR_USERONCHANNEL		"443"
 # define ERR_CHANNELISFULL		"471"
+# define ERR_UNKNOWNMODE        "472"
 # define ERR_INVITEONLYCHAN		"473"
 # define ERR_BADCHANNELKEY		"475"
+# define ERR_INVALIDMODEPARAM	"696"
 
 //Nickname errors
 # define ERR_NONICKNAMEGIVEN	"431"

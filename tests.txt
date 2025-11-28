@@ -1,0 +1,28 @@
+PASS:
+	Test su password errate
+	Test su password molto lunga
+	Test su password con spazi
+	Test su password con caratteri speciali in mezzo
+
+NICK:
+	caratteri validi ovunque:
+											a-z
+											A-Z
+											[, ], \, `, _, ^, {, }, |
+
+	caratteri validi ma non come primo carattere:
+											0-9
+											-
+	
+	Test su NICK con caratteri non validi all'inizio: 
+											~mchiaram
+											&mchiaram
+											@mchiaram
+											%mchiaram
+											+mchiaram
+											-mchiaram
+											0mchiaram
+
+	Test su NICK con caratteri non validi alla fine:
+											mchiaram!
+											mchiara0]m!

@@ -38,7 +38,7 @@ public:
 	std::string				getTopic() const;
 	std::string				getKey() const;
 	std::map<int, Client*>&	getClientMap();
-	void		setKey(const std::string& password);
+	void					setKey(const std::string& password);
 
 	//	JOIN:
 	bool		isInvited(int client_fd) const;
@@ -56,19 +56,19 @@ public:
 
 	//	TOPIC:
 	bool		canChangeTopic(int client_fd) const;
-	void		setTopic(const std::string& newTopic, Client client);
+	void		setTopic(Client client, std::string newTopic = "");
 	void		sendTopicChange();
 
 	//	MODE:
-	bool	hasMode(char mode) const;
-	bool	canChangeModes(int client_fd) const;
-	void	setMode(const char mode, int client, std::string param = "");
-	void	removeMode(const char mode, int client);
-	void	sendModeChange(const char mode, char sign, int setter_fd, std::string param = "");
+	bool		hasMode(char mode) const;
+	bool		canChangeModes(int client_fd) const;
+	void		setMode(const char mode, int client, std::string param = "");
+	void		removeMode(const char mode, int client);
+	void		sendModeChange(const char mode, char sign, int setter_fd, std::string param = "");
 
 	//	PART:
-	void	partClient(Client *client, Server *server);
-	void	sendPartChange(int client_fd);
+	void		partClient(Client *client, Server *server, std::string reason = "");
+	void		sendPartChange(int client_fd, std::string reason = "");
 
 	//	HENDLER:
 	static void		handleTopic(Client& client, Server& server, const std::vector<std::string>& params);

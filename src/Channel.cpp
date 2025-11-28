@@ -208,23 +208,24 @@ void			Channel::handleJoin(Client& client, Server& server, const std::vector<std
 				server.sendReply(ERR_USERONCHANNEL, client.get_userName() + " " + nameChannel + " :is already on channel", client);
 				continue;
 			}
-			if (channel->hasMode('i')) {
-				if (!channel->isInvited(client.get_fD())) {
+			if (channel->isInvited(client.get_fD())) {
+				channel->invited.erase(client.get_fD());
+			} else {
+				if (channel->hasMode('i')) {
 					server.sendReply(ERR_INVITEONLYCHAN, nameChannel + " :Cannot join channel", client);
 					continue;
 				}
-				channel->invited.erase(client.get_fD());
-			}
-			if (channel->hasMode('l')) {
-				if (channel->clients.size() >= (size_t)channel->user_limit) {
-					server.sendReply(ERR_CHANNELISFULL, nameChannel + " :Cannot join channel", client);
-					continue;
+				if (channel->hasMode('l')) {
+					if (channel->clients.size() >= (size_t)channel->user_limit) {
+						server.sendReply(ERR_CHANNELISFULL, nameChannel + " :Cannot join channel", client);
+						continue;
+					}
 				}
-			}
-			if (channel->hasMode('k')) {
-				if (params.size() != 2 || !channel->isRightPassword(keyParam[j++])) {
-					server.sendReply(ERR_BADCHANNELKEY, nameChannel + " :Cannot join channel", client);
-					continue;
+				if (channel->hasMode('k')) {
+					if (params.size() != 2 || !channel->isRightPassword(keyParam[j++])) {
+						server.sendReply(ERR_BADCHANNELKEY, nameChannel + " :Cannot join channel", client);
+						continue;
+					}
 				}
 			}
 			channel->addClient(&client);
@@ -339,12 +340,15 @@ void			Channel::handleKick(Client& client, Server& server, const std::vector<std
 		return;
 	}
 	Channel*	channel = channels[channelName];
+	if (i >= params.size()) {
+		server.sendReply(ERR_NOSUCHCHANNEL, " :Bad format, NICK <channel> <nick>", client);
+		return ;
+	}
 	std::string	targetNick;
 	if (params[i][0] == ':')
 		targetNick = HandleBuffer::capitalize(params[i++].substr(1));
 	else
 		targetNick = HandleBuffer::capitalize(params[i++]);
-	std::cout << targetNick << " " << channelName << std::endl;
 	if (!channel->isClientInChannel(client.get_fD())) {
 		server.sendReply(ERR_NOTONCHANNEL, channelName + " :You're not on that channel", client);
 		return;
@@ -357,12 +361,12 @@ void			Channel::handleKick(Client& client, Server& server, const std::vector<std
 		server.sendReply(ERR_CHANOPRIVSNEEDED, channelName + " :You are not channel operator", client);
 		return;
 	}
-	if (params.size() >= 3) {
-		std::string		reason = params[i++];
+	if (params.size() >= i + 1) {
+		std::string		reason = params[i];
 		if (!reason.empty() && reason[0] == ':')
 			reason = reason.substr(1);
-		for (size_t i = 3; i < params.size(); i++)
-			reason +=  " " + params[i];
+		for (size_t j = i + 1; j < params.size(); j++)
+			reason +=  " " + params[j];
 		channel->kickClient(targetNick, client.get_fD(), reason);
 	} else
 		channel->kickClient(targetNick, client.get_fD(), "");
@@ -382,7 +386,7 @@ bool			Channel::canChangeTopic(int client_fd) const {
 	return true;
 }
 
-void			Channel::setTopic(const std::string& newTopic, Client client) {
+void			Channel::setTopic(Client client, std::string newTopic) {
 	topic = newTopic;
 	topic_setter_info = client.get_nickName() + "!" + client.get_userName() + "@" + client.getHostname();
 	topic_time = time(NULL);
@@ -432,12 +436,15 @@ void			Channel::handleTopic(Client& client, Server& server, const std::vector<st
 		server.sendReply(ERR_CHANOPRIVSNEEDED, channelName+ " :You're not channel operator", client);
 		return;
 	}
-	std::string		newTopic = params[1];
-	if (!newTopic.empty() && newTopic[0] == ':')
-		newTopic = newTopic.substr(1);
-	for (size_t i = 2; i < params.size(); i++)
-		newTopic += " " + params[i];
-	channel->setTopic(newTopic, client);
+	if (params.size() >= 2) {
+		std::string newTopic = params[1];
+		if (!newTopic.empty() && newTopic[0] == ':')
+			newTopic = newTopic.substr(1);
+		for (size_t i = 2; i < params.size(); i++)
+			newTopic += " " + params[i];
+		channel->setTopic(client, newTopic);
+	} else
+		channel->setTopic(client, "");
 }
 
 
@@ -451,8 +458,8 @@ bool			Channel::canChangeModes(int client_fd) const {
 }
 
 void			Channel::setMode(const char mode, int client, std::string param) {
-	if (modes.insert(mode).second) 
-		sendModeChange(mode, '+', client, param);
+	modes.insert(mode);
+	sendModeChange(mode, '+', client, param);
 }
 
 
@@ -469,6 +476,39 @@ void			Channel::sendModeChange(const char mode, char sign, int setter_fd, std::s
 	broadcast(message);
 }
 
+static bool		modeCheckParams(const std::vector<std::string>& params)
+{
+	std::string	flags = params[1];
+	size_t		nParams = 0;
+
+	for (size_t i = 0; i < flags.size(); i++)
+	{
+		if (flags[i] == '+')
+		{
+			while (i < flags.size() && flags[i] != '-')
+			{
+				if (flags[i] == 'k' || flags[i] == 'o' || flags[i] == 'l')
+					nParams++;
+				i++;
+			}
+		}
+		if (flags[i] == '-')
+		{
+			while (i < flags.size() && flags[i] != '+')
+			{
+				if (flags[i] == 'o')
+					nParams++;
+				i++;
+			}
+			if (flags[i] == '+')
+				i--;
+		}
+	}
+	
+	if (nParams != (params.size() - 2))
+		return false;
+	return true;
+}
 
 void			Channel::handleMode(Client& client, Server& server, const std::vector<std::string>& params) {
 	if (!client.isAutenticated() || !client.isRegistered()) {
@@ -510,85 +550,126 @@ void			Channel::handleMode(Client& client, Server& server, const std::vector<std
 		server.sendReply(ERR_CHANOPRIVSNEEDED, channelName + " :You're not channel operator", client);
 		return;
 	}
-	size_t	checked_params = 2;
-	std::string	flags = params[1];
-	for (size_t i = 0; i < flags.size(); ) {
-		if (flags[i] == '+') {
-			i++;
-			while (i < flags.size() && flags[i] != '-') {
-				if (flags[i] == 'i') {
-					channel->setMode('i', client.get_fD());
-				} else if (flags[i] == 't') {
-					channel->setMode('t', client.get_fD());
-				} else if (flags[i] == 'k' && checked_params < params.size()) {
-					if (!channel->hasMode('k')) {
-						channel->setKey(params[checked_params++]);
-						channel->setMode('k', client.get_fD(), channel->key);
-					}
-				} else if (flags[i] == 'o' && checked_params < params.size()) {
-					std::string		nickTarget = HandleBuffer::capitalize(params[checked_params++]);
-					int 			targetFd = getFdByNickname(server.getClientsMap(), nickTarget);
-					if (!channel->isClientInChannel(targetFd)) {
-						server.sendReply(ERR_USERNOTINCHANNEL, nickTarget + " " + channelName + " :They aren't on that channel", client);
-						return;
-					}
-					if (!channel->isOperator(targetFd)) {
-						channel->makeOperator(targetFd);
-						channel->sendOperatorUpdate(server);
-						channel->sendModeChange('o', '+', client.get_fD(), nickTarget);
-					}
-				} else if (flags[i] == 'l' && checked_params < params.size()) {
-					std::stringstream	ss(params[checked_params++]);
-					int					limit;
-					ss >> limit;
-					if (!ss.fail() && limit > 0 && limit < 999) {
-						channel->user_limit = limit;
-						channel->setMode('l', client.get_fD(), params[checked_params - 1]);
+
+	//Check if there are enough params for each requiring mode
+	if (!modeCheckParams(params))
+	{
+		server.sendReply(ERR_NEEDMOREPARAMS, "MODE: Not enough params", client);
+		return ;
+	}
+
+	size_t		checkedParams = 2;
+	bool		add = true;
+
+	for (size_t i = 0; i < params[1].size(); i++)
+	{
+		char	c = params[1][i];
+		
+		switch (c)
+		{
+			case '+':
+				add = true;
+				break ;
+			case '-':
+				add = false;
+				break ;
+			case 'i':
+				if (add)
+					channel->setMode(c, client.get_fD());
+				else
+					channel->removeMode(c, client.get_fD());
+				break;
+			case 't':
+				if (add)
+					channel->setMode(c, client.get_fD());
+				else
+					channel->removeMode(c, client.get_fD());
+				break ;
+			case 'k':
+				if (add)
+				{
+					std::string psw = params[checkedParams++];
+					if (!channel->hasMode(c))
+					{
+						channel->setKey(psw);
+						channel->setMode(c, client.get_fD(), channel->key);
 					}
 				}
-				i++;	
-			}
-		} else if (flags[i] == '-') {
-			i++;
-			while (i < flags.size() && flags[i] != '+') {
-				if (flags[i] == 'i') {
-					channel->removeMode('i', client.get_fD());
-				} else if (flags[i] == 't') {
-					channel->removeMode('t', client.get_fD());
-				} else if (flags[i] == 'k') {
-					channel->key = "";
-					channel->removeMode('k', client.get_fD());
-				} else if (flags[i] == 'o' && checked_params < params.size()) {
-					std::string		nickTarget = HandleBuffer::capitalize(params[checked_params++]);
-					int				targetFd = getFdByNickname(server.getClientsMap(), nickTarget);
-					if (!channel->isClientInChannel(targetFd)) {
-						server.sendReply(ERR_USERNOTINCHANNEL, nickTarget + " " + channelName + " :They aren't on that channel", client);
-						return;
+				else
+				{
+					channel->setKey("");
+					channel->removeMode(c, client.get_fD());
+				}
+				break ;
+			case 'o':
+			{
+				std::string	nickTarget = HandleBuffer::capitalize(params[checkedParams++]);
+				int			targetFd = getFdByNickname(server.getClientsMap(), nickTarget);
+				char		sign = '+';
+
+				if (!channel->isClientInChannel(targetFd)) 
+				{
+					server.sendReply(ERR_USERNOTINCHANNEL, nickTarget + " " + channelName + " :They aren't on that channel", client);
+					break ;
+				}
+				if (add && !channel->isOperator(targetFd))
+					channel->makeOperator(targetFd);
+				else if (!add)
+				{
+					if (channel->operators.size() == 1 && channel->isOperator(targetFd)) {
+						server.sendReply(ERR_CHANOPRIVSNEEDED, channelName + " :cannot deop the last operator", client);
+						break;
 					}
 					channel->removeOperator(targetFd);
-					channel->sendOperatorUpdate(server);
-					channel->sendModeChange('o', '-', client.get_fD(), nickTarget);
-				} else if (flags[i] == 'l') {
-					channel->user_limit = 0;
-					channel->removeMode('l', client.get_fD());
+					sign = '-';
 				}
-				i++;
+				channel->sendOperatorUpdate(server);
+				channel->sendModeChange(c, sign, client.get_fD(), nickTarget);
+				break ;
 			}
+			case 'l':
+			{
+				if (add)
+				{
+					std::string			strLimit = params[checkedParams++];
+					std::stringstream	ss(strLimit);
+					int					limit;
+
+					ss >> limit;
+					if (ss.fail() || limit <= 0 || limit >= 1000)
+					{
+						server.sendReply(ERR_INVALIDMODEPARAM, strLimit + ": invalid limit, must be > 0 and < 1000", client);
+						break ;
+					}
+					channel->user_limit = limit;
+					channel->setMode(c, client.get_fD(), strLimit);
+				}
+				else
+				{
+					channel->user_limit = 0;
+					channel->removeMode(c, client.get_fD());
+				}
+				break ;
+			}
+			default:
+				server.sendReply(ERR_UNKNOWNMODE, client.get_nickName() + " " + c + " :Is unknown mode char to me", client);
+				break;
 		}
-		i++;
 	}
 }
 
 
-
 // ===================================== PART ========================================
-void			Channel::partClient(Client* client, Server* server) {
-	sendPartChange(client->get_fD());
+void			Channel::partClient(Client* client, Server* server, std::string reason) {
+	sendPartChange(client->get_fD(), reason);
 	removeClient(client, server);
 }
 
-void			Channel::sendPartChange(int client_fd) {
-	std::string		message = ":" + clients[client_fd]->get_nickName() + "!" + clients[client_fd]->get_userName() + "@" + clients[client_fd]->getHostname() + " PART " + name + "\r\n";
+void			Channel::sendPartChange(int client_fd, std::string reason) {
+	std::string		message = ":" + clients[client_fd]->get_nickName() + "!" + clients[client_fd]->get_userName() + "@" + clients[client_fd]->getHostname() + " PART " + name;
+	if (!reason.empty())
+		message += " :" + reason;
+	message += "\r\n";
 	broadcast(message);
 }
 
@@ -612,7 +693,14 @@ void			Channel::handlePart(Client& client, Server& server, const std::vector<std
 		server.sendReply(ERR_NOTONCHANNEL, channelName + " :You're not on that channel", client);
 		return;
 	}
-	channel->partClient(&client, &server);
+	if (params.size() >= 2) {
+		std::string		reason = params[1];
+		if (!reason.empty() && reason[0] == ':')
+			reason = reason.substr(1);
+		for (size_t i = 2; i < params.size(); i++)
+			reason += " " + params[i];
+		channel->partClient(&client, &server, reason);
+	} else
+		channel->partClient(&client, &server, "");
 	server.ifRemoveChannel(channelName);
 }
- 

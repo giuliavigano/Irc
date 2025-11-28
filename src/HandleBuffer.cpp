@@ -126,12 +126,6 @@ static bool	validNickname(const std::string& nickname, Server& server, Client& c
 		server.sendReply(ERR_NONICKNAMEGIVEN, "NICK: Nickname not given", client);
 		return false;
 	}
-	
-	if (nickname.length() > 9)
-	{
-		server.sendReply(ERR_ERRONEUSNICKNAME, "NICK: Nickname too long, max 15 chars", client);
-		return false;
-	}
 
 	if (isdigit(nickname[0]) || nickname[0] == '-')
 	{
@@ -165,14 +159,19 @@ void	HandleBuffer::handleNick(Client& client, Server& server, const std::vector<
 		server.sendReply(ERR_NONICKNAMEGIVEN, "NICK: Nickname not given", client);
 		return ;
 	}
-	if (!validNickname(params[0], server, client))
+	std::string	nickname = capitalize(params[0]);
+
+	if (!validNickname(nickname, server, client))
 		return ;
+
+	if (nickname.length() > 30)
+		nickname = nickname.substr(0, 30);
 
 	std::map<int, Client*>	clientsMap = server.getClientsMap();
 
 	for (std::map<int, Client *>::iterator it = clientsMap.begin(); it != clientsMap.end(); it++)
 	{
-		if (capitalize(params[0]) == it->second->get_nickName())
+		if (nickname == it->second->get_nickName())
 		{
 			server.sendReply(ERR_NICKNAMEINUSE, "NICK: Nickname already in use", client);
 			return ;
@@ -181,19 +180,21 @@ void	HandleBuffer::handleNick(Client& client, Server& server, const std::vector<
 	
 	if (!client.get_userName().empty() && client.get_nickName().empty())
 	{
+		client.setNickName(nickname);
 		std::string	welcomeMessage = ":Welcome to the IRC Network " + client.get_nickName() + "!" + client.get_userName() + "@" + client.getHostname();
 		server.sendReply(RPL_WELCOME, welcomeMessage, client);
+		return ;
 	}
 	else if (!client.get_userName().empty())
 	{
 		std::map<std::string, Channel*>	channelsMap = client.getChannelList();
-		std::string	message = ":" + client.get_nickName() + "!" + client.get_userName() + "@" + client.getHostname() + " NICK :" + capitalize(params[0]) + "\r\n";
+		std::string	message = ":" + client.get_nickName() + "!" + client.get_userName() + "@" + client.getHostname() + " NICK :" + capitalize(nickname) + "\r\n";
 
 		for (std::map<std::string, Channel*>::iterator it = channelsMap.begin(); it != channelsMap.end(); it++)
-			it->second->broadcast(message);
+			it->second->broadcast(message, &client);
+		client.appendToWriteBuffer(message);
 	}
-	client.setNickName(capitalize(params[0]));
-
+	client.setNickName(nickname);
 }
 
 void	HandleBuffer::handleUser(Client& client, Server& server, const std::vector<std::string>& params)
@@ -320,7 +321,7 @@ void	HandleBuffer::handleMsg(Client& client, Server& server, const std::vector<s
 		return ;
 	}
 
-	Client*	targetClient = findClient(target, server.getClientsMap());
+	Client*	targetClient = findClient(capitalize(target), server.getClientsMap());
 	if (!targetClient)
 	{
 		server.sendReply(ERR_NOSUCHNICK, "PRIVMSG: User " + target + " doesn't exist", client);
@@ -342,13 +343,21 @@ void	HandleBuffer::handleQuit(Client& client, Server& server, const std::vector<
 	std::string quitMsg = ":" + client.get_nickName() + "!" + client.get_userName() + "@" + client.getHostname() + " QUIT ";
 	
 	if (!params.empty())
-		quitMsg += ":" + params[0];
+	{
+		for (size_t i = 0; i < params.size(); i++)
+		{
+			if (i == 0)
+				quitMsg += ":" + params[i];
+			else
+				quitMsg += " " + params[i];
+		}
+	}
 	else
 		quitMsg += ":Client Quit";
 	quitMsg += "\r\n";
 	for (std::map<std::string, Channel *>::const_iterator it = clientChannels.begin(); it != clientChannels.end(); it++)
 	{
-		it->second->broadcast(client.get_nickName() + " has left the channel.", &client);
+		it->second->broadcast(quitMsg, &client);
 		it->second->removeClient(&client, &server);
 		server.ifRemoveChannel(it->second->getName());
 	}
