@@ -1,3 +1,15 @@
+/* ************************************************************************** */
+/*                                                                            */
+/*                                                        :::      ::::::::   */
+/*   Server.cpp                                         :+:      :+:    :+:   */
+/*                                                    +:+ +:+         +:+     */
+/*   By: gvigano <gvigano@student.42.fr>            +#+  +:+       +#+        */
+/*                                                +#+#+#+#+#+   +#+           */
+/*   Created: 2025/12/01 14:10:44 by gvigano           #+#    #+#             */
+/*   Updated: 2025/12/01 14:10:44 by gvigano          ###   ########.fr       */
+/*                                                                            */
+/* ************************************************************************** */
+
 #include "Server.hpp"
 #include "Client.hpp"
 #include <sys/socket.h>
@@ -6,15 +18,15 @@
 
 extern volatile sig_atomic_t	g_shutdown;
 
-// VEDI SE LANCIARE INVECE UN'ECCEZIONE --> E GESTIRE L'ERRORE CON TRY CATCH (COSI L'OGETTO NON VIENE CREATO)
-Server::Server(int _port, const std::string& password) : port(_port), passWord(password), serverName("ircserv") {
+// Parametric Constructor. If server initialization (init()) fails, the program terminates.
+Server::Server(int _port, const std::string& password) : port(_port), passWord(password), serverName("ircserv"), connections(0) {
 	if (!init()) {
 		std::cerr << "Fatal: server initialization failed. Exiting!" << std::endl;
 		std::exit(EXIT_FAILURE);
 	}
 }
 
-// CHIUSURA SERVER E CLEANUP DI CLIENTS*
+// Cleans up all the server resources and connected clients
 Server::~Server() {
 	for(std::map<int, Client*>::iterator i = clients.begin(); i != clients.end(); ++i) {
 		std::string message = "ERROR :Server is shutting down\r\n";
@@ -34,7 +46,7 @@ Server::~Server() {
 		close(socketFd);
 }
 
-// IN CASO DI FALLIMENTO DI QUESTE CHIAMATE NON POSSO GARANTIRE I/O NON BLOCCANTE --> ESCO
+// Initialize the socket server correctly, to support non-blocking I/O.
 bool	Server::init() {
 	socketFd = socket(AF_INET, SOCK_STREAM, 0);
 	if (socketFd < 0) {
@@ -55,9 +67,9 @@ bool	Server::init() {
 
 	struct	sockaddr_in	server_addr;
 	std::memset(&server_addr, 0, sizeof(server_addr));
-	server_addr.sin_family = AF_INET; // tipo di indirizzo
-	server_addr.sin_port = htons(port); // htons() per convertire la porta scelta in ascolto in "network byte order" (perchè CPU e rete usano ordini di byte diversi)
-	server_addr.sin_addr.s_addr = INADDR_ANY; // L'indirizzo IP su cui ascoltare (INADDR_ANY = Tutti gli indizzi ip della macchin)
+	server_addr.sin_family = AF_INET; // type of address
+	server_addr.sin_port = htons(port); // htons() to convert the port in "network byte order"
+	server_addr.sin_addr.s_addr = INADDR_ANY; // IP address on witch listening (INADDR_ANY = all the IP address available on the machine)
 	
 	if (bind(socketFd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
 		std::cerr << "bind() failed: " << strerror(errno) << std::endl;
@@ -74,8 +86,10 @@ bool	Server::init() {
 	}
 	return true;
 }
+// Socket server listening on input port..
 
-// FD PIU ALTO FRA QUELLI SU CUI LAVORO (per select() -> monitora piu fd contemporaneamente per sapere quali sono pronti per fare operazioni di I/O input/output)
+
+// Returns the highest file descriptor among all connected clients. (Used for select() to monitor multiple fd simultaneously to know witch ones are ready for input/output operations)
 int		Server::get_maxFd() const {
 	int		max = socketFd;
 	for (std::map<int, Client*>::const_iterator it = clients.begin(); it != clients.end(); ++it) {
@@ -85,24 +99,30 @@ int		Server::get_maxFd() const {
 	return max;
 }
 
-// controlla: accept() sarebbe bloccante (attende) --> quindi se arriva un segnale puo essere interrotta !
+// Handles accepting new connections on the server's listening socket
 void	Server::handleNewConnection() {
-	int	client_fd = accept(socketFd, NULL, NULL);
-	if (client_fd < 0) {
-		std::cerr << "accept() failed: " << strerror(errno) << std::endl; // perche voglio vedere tutti i log di errore altrimenti posso ridurli con SE if (errno != EWOULDBLOCK && errno != EAGAIN && errno != EINTR) allora std::cer.... POI return;
-		return;
-	}
-	else if (client_fd >= FD_SETSIZE) {
-		close(client_fd);
-		return;
-	}
-	else {
-		fcntl(client_fd, F_SETFL, O_NONBLOCK);
-		Client*	client = new Client(client_fd);
-		clients[client_fd] = client;
+	if (connections < 1024) {
+		int	client_fd = accept(socketFd, NULL, NULL);
+		if (client_fd < 0) {
+			if (errno == EWOULDBLOCK || errno == EAGAIN || errno == EINTR)
+				return;
+			std::cerr << "accept() failed: " << strerror(errno) << std::endl;
+			return;
+		}
+		else if (client_fd >= FD_SETSIZE) {
+			close(client_fd);
+			return;
+		}
+		else {
+			fcntl(client_fd, F_SETFL, O_NONBLOCK);
+			Client*	client = new Client(client_fd);
+			clients[client_fd] = client;
+			connections++;
+		}
 	}
 }
 
+// Handles cleanup of all resources related to the given Client object
 static void	disconnectClient(Client* client, Server* server, std::map<int , Client*>& clients)
 {
 	int	client_fd = client->get_fD();
@@ -119,19 +139,21 @@ static void	disconnectClient(Client* client, Server* server, std::map<int , Clie
 	clients.erase(client_fd);
 }
 
-// GESTIRE ATTIVITÀ RICEVUTA DA CLIENT SOCKET --> DATI RICEVUTI (con recv(), estrai comandi e parsing ??)
+// Manages I/O activity from a client connection. If the connection is closed or an error occurs then disconnect the client.
 void	Server::handleClient(int client_fd) {
 	Client	*client = clients[client_fd];
-	char	buffer[512]; // il protocollo irc specifica che i messaggi hanno max 512 byte (incluso \r\n)
+	char	buffer[512];
 	ssize_t	bytes = recv(client_fd, buffer, sizeof(buffer), 0);
 	if (bytes < 0) {
-		if (errno == EWOULDBLOCK || errno == EAGAIN || errno == EINTR)
-			return;
-		std::cerr << "recv() failed on fd: " << client_fd << strerror(errno) << std::endl;
-		disconnectClient(client, this, clients);
+		if (errno != EWOULDBLOCK && errno != EAGAIN && errno != EINTR) {
+			std::cerr << "recv() failed on fd: " << client_fd << strerror(errno) << std::endl;
+			disconnectClient(client, this, clients);
+			connections--;
+		}
 	} else if (bytes == 0) {
 		std::cout << "Client " << client_fd << " disconnected" << std::endl;
 		disconnectClient(client, this, clients);
+		connections--;
 	} else {
 		buffer[bytes] = '\0';
 		client->appendToBuffer(std::string(buffer, bytes));
@@ -139,7 +161,7 @@ void	Server::handleClient(int client_fd) {
 	}
 }
 
-// CICLO PRINCIPALE --> SEMPRE IN ASCOLTO PER CONNESSIONI/COMUNICAZIONI SERVER/CLIENT
+// Main loop ->  Server always listening for connection/communications with clients.
 void	Server::run() {
 	while (!g_shutdown) {
 		int		max_fd = get_maxFd();
@@ -156,7 +178,7 @@ void	Server::run() {
 		}
 		int	result = select(max_fd + 1, &read_set, &write_set, NULL, NULL);
 		if (result < 0) {
-			if (errno == EINTR) // Interruzione da SEGNALE (Ctrl+C)
+			if (errno == EINTR) // (Ctrl+C)
 				continue;
 			std::cerr << "select() failed: " << strerror(errno) << std::endl;
 		}
@@ -192,6 +214,7 @@ void	Server::run() {
 	return ;
 }
 
+// Handles sending pending data to the client.
 void	Server::handleClientWrite(Client* client)
 {
 	std::string&	write_buffer = client->getWriteBuffer();
@@ -209,29 +232,35 @@ void	Server::handleClientWrite(Client* client)
 		{
 			std::cerr << "send() failed for client " << client->get_fD() << ": " << strerror(errno) << std::endl;
 			disconnectClient(client, this, clients);
+			connections--;
 		}
 	}
 	else if (bytes_sent == 0)
 	{
 		std::cout << "Client " << client->get_fD() << " disconnected." << std::endl;
 		disconnectClient(client, this, clients);
+		connections--;
 	}
 }
 
+// Returns the server password.
 std::string	Server::getPsw() const
 {
 	return passWord;
 }
 
+// Returns the server structure containing all active clients on the server.
 std::map<int, Client*>	Server::getClientsMap() const
 {
 	return clients;
 }
 
+// Returns the server structure containing all active channels on the server.
 std::map<std::string, Channel*>&	Server::getChannelsMap() {
 	return channels;
 }
 
+// Formats and queues a reply message to the client.
 void	Server::sendReply(const std::string& code, const std::string& message, Client& client)
 {
 	std::string	reply = ":" + serverName + " " + code + " " + 
@@ -241,6 +270,7 @@ void	Server::sendReply(const std::string& code, const std::string& message, Clie
 	client.appendToWriteBuffer(reply);
 }
 
+// If the given channel is empty --> Removes the channel object from the server's channels map and deletes. 
 void	Server::ifRemoveChannel(const std::string& channelName) {
 	std::map<std::string, Channel*>::iterator it = channels.find(channelName);
 
@@ -251,15 +281,18 @@ void	Server::ifRemoveChannel(const std::string& channelName) {
 	}
 }
 
+// Returns the server's name
 const std::string&	Server::getServerName() const
 {
 	return serverName;
 }
 
+// Closes and removes a client from the server
 void	Server::eraseClient(Client*	client)
 {
 	int	client_fd = client->get_fD();
 	close(client_fd);
 	delete client;
 	clients.erase(client_fd);
+	connections--;
 }

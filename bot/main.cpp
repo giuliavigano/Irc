@@ -1,24 +1,26 @@
 /* ************************************************************************** */
 /*                                                                            */
 /*                                                        :::      ::::::::   */
-/*   InputParse.hpp                                     :+:      :+:    :+:   */
+/*   main.cpp                                           :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
 /*   By: mchiaram <mchiaram@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
-/*   Created: 2025/12/01 14:07:11 by mchiaram          #+#    #+#             */
-/*   Updated: 2025/12/01 14:07:12 by mchiaram         ###   ########.fr       */
+/*   Created: 2025/12/01 14:06:58 by mchiaram          #+#    #+#             */
+/*   Updated: 2025/12/01 14:06:59 by mchiaram         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
-#ifndef INPUTPARSE_HPP
-# define INPUTPARSE_HPP
+#include "Bot.hpp"
 
-# include <string>
-
-class InputParse
+int	main(int argc, char** argv)
 {
-	public:
-		static void	checkInput(int port, const std::string& psw);
-};
+	if (argc < 4)
+	{
+		std::cerr << "Not enough arguments" << std::endl;
+		exit(EXIT_FAILURE);
+	}
 
-#endif
+	Bot	bot(argv);
+
+	bot.run();
+}

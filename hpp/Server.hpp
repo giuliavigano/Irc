@@ -1,3 +1,15 @@
+/* ************************************************************************** */
+/*                                                                            */
+/*                                                        :::      ::::::::   */
+/*   Server.hpp                                         :+:      :+:    :+:   */
+/*                                                    +:+ +:+         +:+     */
+/*   By: gvigano <gvigano@student.42.fr>            +#+  +:+       +#+        */
+/*                                                +#+#+#+#+#+   +#+           */
+/*   Created: 2025/12/01 14:10:01 by gvigano           #+#    #+#             */
+/*   Updated: 2025/12/01 14:10:02 by gvigano          ###   ########.fr       */
+/*                                                                            */
+/* ************************************************************************** */
+
 #ifndef	SERVER_HPP
 # define SERVER_HPP
 #include <map>
@@ -44,6 +56,7 @@ private:
 	std::map<int , Client*>			clients;
 	std::map<std::string, Channel*>	channels;
 	std::string						serverName;
+	int								connections;
 };
 
 #endif
