@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Channel.cpp                                        :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: gvigano <gvigano@student.42.fr>            +#+  +:+       +#+        */
+/*   By: giuliaviga <giuliaviga@student.42.fr>      +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/12/01 14:10:15 by gvigano           #+#    #+#             */
-/*   Updated: 2025/12/01 14:10:15 by gvigano          ###   ########.fr       */
+/*   Updated: 2025/12/08 11:47:24 by giuliaviga       ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -16,11 +16,15 @@
 #include "Server.hpp"
 #include "HandleBuffer.hpp"
 
+//	Parametric constructor
 Channel::Channel(const std::string& name) : name(name), topic(""), user_limit(0), topic_setter_info(""), topic_time(0), key("") {}
 
+//	Default destructor
 Channel::~Channel() {}
 
-///======================================== UTILS ===========================================
+// ======================================== UTILS ===========================================
+
+//	Returns the file descriptor of a client by knowing the nickname
 static int	getFdByNickname(const std::map<int, Client *>& clientsMap, const std::string& nickname)
 {
 	for (std::map<int, Client *>::const_iterator it = clientsMap.begin(); it != clientsMap.end(); it++)
@@ -31,6 +35,7 @@ static int	getFdByNickname(const std::map<int, Client *>& clientsMap, const std:
 	return 0;
 }
 
+//	Returns the string in lowercase format
 static std::string	lowercase(const std::string& str) {
 	std::string 	lowercase;
 	for (size_t i = 0; i < str.size(); i++) {
@@ -39,6 +44,7 @@ static std::string	lowercase(const std::string& str) {
 	return lowercase;
 }
 
+//	Splits a string by comma
 static std::vector<std::string>	splitByComma(const std::string& params) {
 	std::vector<std::string>	result;
 	size_t	start = 0;
@@ -52,6 +58,7 @@ static std::vector<std::string>	splitByComma(const std::string& params) {
 	return result;
 }
 
+//	Add a client into this channel
 void			Channel::addClient(Client* client) {
 	if (clients.find(client->get_fD()) == clients.end()) {
 		clients[client->get_fD()] = client;
@@ -59,6 +66,7 @@ void			Channel::addClient(Client* client) {
 	}
 }
 
+//	Remove correctly a client from this channel
 void			Channel::removeClient(Client* client, Server* server) {
 	if (clients.find(client->get_fD()) == clients.end())
 		return;
@@ -71,12 +79,14 @@ void			Channel::removeClient(Client* client, Server* server) {
 		sendOperatorUpdate(*server);
 }
 
+//	Returns whether a certain client is in this channel or not, by knowing his file descriptor
 bool			Channel::isClientInChannel(int client_fd) const {
 	if (clients.find(client_fd) != clients.end())
 		return true;
 	return false;
 }
 
+//	Returns whether a certain client is in this channel or not
 bool			Channel::isClientInChannel(std::string name) const {
 	for(std::map<int, Client*>::const_iterator i = clients.begin(); i != clients.end(); ++i) {
 		if (i->second->get_nickName() == name)
@@ -85,6 +95,7 @@ bool			Channel::isClientInChannel(std::string name) const {
 	return false;
 }
 
+//	Returns whether the input is a valid name for a channel or not
 bool			Channel::isAValidChannel(std::string name) {
 	if (name.size() < 2 || name.size() > 50)
 		return false;
@@ -100,42 +111,52 @@ bool			Channel::isAValidChannel(std::string name) {
 	return true;
 }
 
+//	Returns whether the given input rappresent the right password of this channel
 bool			Channel::isRightPassword(std::string client_passw) const {
 	return (client_passw == key);
 }
 
+//	Returns the name of this channel
 std::string		Channel::getName() const {
 	return	name;
 }
 
+//	Returns the password of this channel
 std::string		Channel::getKey() const {
 	return key;
 }
 
+//	Returns the client map of this channel
 std::map<int, Client*>&	Channel::getClientMap() {
 	return clients;
 }
 
+//	Sets the password for this channel
 void			Channel::setKey(const std::string& password) {
 	key = password;
 }
 
+//	Returns whether this channel is empty or not
 bool			Channel::isEmpty() const {
 	return clients.empty();
 }
 
+//	Returns whether the given client is an operator for this channel or not
 bool			Channel::isOperator(int client_fd) const {
 	return (operators.count(client_fd) > 0);
 }
 
+//	Gives the operator privilege to a client
 void			Channel::makeOperator(int client_fd) {
 	operators.insert(client_fd);
 }
 
+//	Removes the operator privilege from a client
 void			Channel::removeOperator(int client_fd) {
 	operators.erase(client_fd);
 }
 
+// Defines the message that will be send by the server to all the clients in this channel
 void			Channel::broadcast(const std::string& message, Client* excludeClient) {
     for (std::map<int, Client*>::iterator it = clients.begin(); it != clients.end(); ++it) {
         if (excludeClient == NULL || it->second->get_fD() != excludeClient->get_fD()) {
@@ -144,6 +165,7 @@ void			Channel::broadcast(const std::string& message, Client* excludeClient) {
     }
 }
 
+//	Returns whether the channel has operator or not
 bool	Channel::hasOperators()
 {
 	if (operators.empty())
@@ -151,6 +173,7 @@ bool	Channel::hasOperators()
 	return true;
 }
 
+//	Sends updates of operator privileges in the channel
 void	Channel::sendOperatorUpdate(Server& server)
 {
 	for (std::map<int, Client*>::iterator it = clients.begin(); it != clients.end(); it++)
@@ -158,15 +181,19 @@ void	Channel::sendOperatorUpdate(Server& server)
 }
 
 // ======================================= JOIN =========================================
+
+//	Returns whether a client is invited in this channel or not
 bool			Channel::isInvited(int client_fd) const {	
 	return (invited.count(client_fd) > 0);
 }
 
+//	Sends an information massage to all the clients in the channel when a new client join the channel
 void			Channel::sendJoinChange(Client& client) {
 	std::string message = ":" + client.get_nickName() + "!" + client.get_userName() + "@" + client.getHostname() + " JOIN " + name + "\r\n";
 	broadcast(message);
 }
 
+//	Sends topic and client list information to the client
 void			Channel::sendClientInfo(Client& client, Server& server) {
 	if (!topic.empty()) {
 		server.sendReply(RPL_TOPIC, name + " :" + topic, client);
@@ -185,6 +212,7 @@ void			Channel::sendClientInfo(Client& client, Server& server) {
 	server.sendReply(RPL_ENDOFNAMES, name + " :End of /NAMES list", client);
 }
 
+//	Handles correctly the command JOIN from a client
 void			Channel::handleJoin(Client& client, Server& server, const std::vector<std::string>& params) {
 	if (!client.isAutenticated() || !client.isRegistered()) {
 		server.sendReply(ERR_NOTREGISTERED, " :You have not registered", client);
@@ -249,18 +277,23 @@ void			Channel::handleJoin(Client& client, Server& server, const std::vector<std
 
 
 // ======================================= INVITE =========================================
+
+//	Returns whether a client can invite another into this channel
 bool			Channel::canInviteClient(int client_fd) const {
 	if (hasMode('i'))
 		return (isOperator(client_fd));
 	return true;
 }
 
+//	Invites a client in this channel and form a clear brodcast message for this (client-client)
 void			Channel::inviteClient(Client* invitedClient, std::string nickname, int client_fd) {
 	invited.insert(invitedClient->get_fD());
 	std::string		message = ":" + clients[client_fd]->get_nickName() + "!" + clients[client_fd]->get_userName() + "@" + clients[client_fd]->getHostname() + " INVITE " + nickname + " " + name + "\r\n";
 	invitedClient->appendToWriteBuffer(message);
 }
 
+
+//	Handles correctly the command INVITE from a client
 void			Channel::handleInvite(Client& client, Server& server, const std::vector<std::string>& params) {
 	if (!client.isAutenticated() || !client.isRegistered()) {
 		server.sendReply(ERR_NOTREGISTERED, " :You have not registered", client);
@@ -308,12 +341,15 @@ void			Channel::handleInvite(Client& client, Server& server, const std::vector<s
 }
 
 //========================================= KICK ==========================================
+
+//	Returns whether a client can kick another from the channel
 bool			Channel::canKickClient(int kicker_fd) const {
 	if (isOperator(kicker_fd))
 		return true;
 	return false;
-}
+}	
 
+//	Kicks a client from the channel and send a message for this change
 void			Channel::kickClient(std::string clientOut, int kicker_fd, std::string reason) {
 	sendKickChange(clientOut, kicker_fd, reason);
 	for (std::map<int, Client*>::iterator i = clients.begin(); i != clients.end(); ++i) {
@@ -324,6 +360,7 @@ void			Channel::kickClient(std::string clientOut, int kicker_fd, std::string rea
 	}
 }
 
+//	Sends a message when a client execute the command kick on another 
 void			Channel::sendKickChange(std::string nameOut, int kicker_fd, std::string reason) {
 	std::string			message;
 	if (!reason.empty())
@@ -333,6 +370,7 @@ void			Channel::sendKickChange(std::string nameOut, int kicker_fd, std::string r
 	broadcast(message);
 }
 
+//	Handles correctly the command KICK from a client
 void			Channel::handleKick(Client& client, Server& server, const std::vector<std::string>& params) {
 	if (!client.isAutenticated() || !client.isRegistered()) {
 		server.sendReply(ERR_NOTREGISTERED, " :You have not registered", client);
@@ -387,10 +425,13 @@ void			Channel::handleKick(Client& client, Server& server, const std::vector<std
 
 
 //======================================== TOPIC ===========================================
+
+//	Returns the topic of the channel
 std::string		Channel::getTopic() const {
 	return topic;
 }
 
+//	Returns whether the given client can change the topic of the channel or not
 bool			Channel::canChangeTopic(int client_fd) const {
 	if (modes.count('t') > 0) { 
 		return (isOperator(client_fd));
@@ -398,6 +439,7 @@ bool			Channel::canChangeTopic(int client_fd) const {
 	return true;
 }
 
+//	Sets the topic of the channel
 void			Channel::setTopic(Client client, std::string newTopic) {
 	topic = newTopic;
 	topic_setter_info = client.get_nickName() + "!" + client.get_userName() + "@" + client.getHostname();
@@ -405,11 +447,13 @@ void			Channel::setTopic(Client client, std::string newTopic) {
 	sendTopicChange();
 }
 
+//	Send a message when the topic change
 void			Channel::sendTopicChange() {
 	std::string		message = ":" + topic_setter_info + " TOPIC " + name + " :" + topic + "\r\n";
 	broadcast(message);
 }
 
+//	Handles correctly the command TOPIC from a client
 void			Channel::handleTopic(Client& client, Server& server, const std::vector<std::string>& params) {
 	if (!client.isAutenticated() || !client.isRegistered()) {
 		server.sendReply(ERR_NOTREGISTERED, " :You have not registered", client);
@@ -461,25 +505,30 @@ void			Channel::handleTopic(Client& client, Server& server, const std::vector<st
 
 
 //========================================== MODE =============================================
+
+//	Returns whether the channel has active modes or not
 bool			Channel::hasMode(char mode) const {
 	return (modes.count(mode) > 0);
 }
 
+//	Returns whether the given client can change the modes of the channel or not
 bool			Channel::canChangeModes(int client_fd) const {
 	return (isOperator(client_fd));
 }
 
+//	Sets a mode for the channel
 void			Channel::setMode(const char mode, int client, std::string param) {
 	modes.insert(mode);
 	sendModeChange(mode, '+', client, param);
 }
 
-
+//	Removes a mode from the channel
 void			Channel::removeMode(const char mode, int client) {
 	if (modes.erase(mode) > 0)
 		sendModeChange(mode, '-', client);
 }
 
+//	Send a message when there is a modes change for the channel
 void			Channel::sendModeChange(const char mode, char sign, int setter_fd, std::string param) {
 	std::string		message = ":" + clients[setter_fd]->get_nickName() + "!" + clients[setter_fd]->get_userName() + "@" + clients[setter_fd]->getHostname() + " MODE " + name + " " + sign + mode;
 	if (!param.empty())
@@ -488,6 +537,7 @@ void			Channel::sendModeChange(const char mode, char sign, int setter_fd, std::s
 	broadcast(message);
 }
 
+//	Checks the params of the set modes of the channel
 static bool		modeCheckParams(const std::vector<std::string>& params)
 {
 	std::string	flags = params[1];
@@ -522,6 +572,7 @@ static bool		modeCheckParams(const std::vector<std::string>& params)
 	return true;
 }
 
+//	Handles correctly the command MODE from a client
 void			Channel::handleMode(Client& client, Server& server, const std::vector<std::string>& params) {
 	if (!client.isAutenticated() || !client.isRegistered()) {
 		server.sendReply(ERR_NOTREGISTERED, " :You have not registered", client);
@@ -672,11 +723,14 @@ void			Channel::handleMode(Client& client, Server& server, const std::vector<std
 
 
 // ===================================== PART ========================================
+
+//	Part a client from the channel
 void			Channel::partClient(Client* client, Server* server, std::string reason) {
 	sendPartChange(client->get_fD(), reason);
 	removeClient(client, server);
 }
 
+//	Sends a message when a client leaves the channel
 void			Channel::sendPartChange(int client_fd, std::string reason) {
 	std::string		message = ":" + clients[client_fd]->get_nickName() + "!" + clients[client_fd]->get_userName() + "@" + clients[client_fd]->getHostname() + " PART " + name;
 	if (!reason.empty())
@@ -685,6 +739,7 @@ void			Channel::sendPartChange(int client_fd, std::string reason) {
 	broadcast(message);
 }
 
+//	Handles correctly the command PART from a client
 void			Channel::handlePart(Client& client, Server& server, const std::vector<std::string>& params) {
 	if (!client.isAutenticated() || !client.isRegistered()) {
 		server.sendReply(ERR_NOTREGISTERED, " :You have not registered", client);
